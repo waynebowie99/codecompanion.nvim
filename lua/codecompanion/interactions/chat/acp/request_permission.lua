@@ -256,6 +256,28 @@ function M.confirm(chat, request)
   local tool_call = request.tool_call
   local has_diff = tool_call and requires_diff(tool_call)
 
+  -- Auto-approve permission requests when YOLO mode is enabled for this chat buffer
+  local approvals = require("codecompanion.interactions.chat.tools.approvals")
+  if approvals:is_approved(chat.bufnr) then
+    -- Prefer allow_once, then allow_always, then first allow* option
+    local kind_map = build_kind_map(request.options)
+    local option_id = kind_map["allow_once"] or kind_map["allow_always"]
+    if not option_id then
+      for _, opt in ipairs(request.options or {}) do
+        if type(opt.kind) == "string" and opt.kind:find("^allow") and type(opt.optionId) == "string" then
+          option_id = opt.optionId
+          break
+        end
+      end
+    end
+
+    if option_id then
+      log:debug("[acp::request_permission] Auto-approving permission due to YOLO mode: %s", option_id)
+      request.respond(option_id, false)
+      return
+    end
+  end
+
   local permission = { chat = chat, request = request }
   local choices = build_choices(permission, has_diff)
 
