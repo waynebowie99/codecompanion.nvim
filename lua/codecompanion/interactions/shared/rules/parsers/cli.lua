@@ -1,11 +1,13 @@
 --[[
 ===============================================================================
-    File:       codecompanion.interactions/chat/rules/parsers/claude.lua
+    File:       codecompanion.interactions.shared.rules/parsers/cli.lua
     Author:     Oli Morris
 -------------------------------------------------------------------------------
     Description:
-      Parses a CLAUDE.md (or similarly formatted) file, extracting any lines
-      that start with "@" as file paths to be included in rules.
+      Parses a markdown file and extracts any lines that start with "@" as
+      file paths. Unlike the claude parser, this returns no content — only
+      file references. Designed for CLI interactions where the agent reads
+      files directly.
 ===============================================================================
 --]]
 
@@ -16,22 +18,20 @@ return function(file)
   local included_files = {}
 
   if content == "" then
-    return { content = content }
+    return { content = "" }
   end
 
-  -- Parse the markdown content
   local ok, parser = pcall(vim.treesitter.get_string_parser, content, "markdown")
   if not ok then
-    return { content = content }
+    return { content = "" }
   end
 
   local tree = parser:parse()[1]
   if not tree then
-    return { content = content }
+    return { content = "" }
   end
   local root = tree:root()
 
-  -- Single capture query: all paragraph nodes
   local query = vim.treesitter.query.parse("markdown", "(paragraph) @p")
   local get_text = vim.treesitter.get_node_text
 
@@ -49,5 +49,5 @@ return function(file)
     end
   end
 
-  return { content = content, meta = (#included_files > 0) and { included_files = included_files } or nil }
+  return { content = "", meta = (#included_files > 0) and { included_files = included_files } or nil }
 end

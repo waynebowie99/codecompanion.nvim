@@ -1,4 +1,4 @@
-*codecompanion.txt*          For NVIM v0.11         Last change: 2026 March 28
+*codecompanion.txt*          For NVIM v0.11         Last change: 2026 April 07
 
 ==============================================================================
 Table of Contents                            *codecompanion-table-of-contents*
@@ -79,7 +79,7 @@ FEATURES                                      *codecompanion-welcome-features*
 -  Copilot Chat <https://github.com/features/copilot> meets Zed AI <https://zed.dev/blog/zed-ai>, in Neovim
 -  Integrates Neovim with LLMs and Agents in the CLI
 -  Support for LLMs from Anthropic, Copilot, GitHub Models, DeepSeek, Gemini, Mistral AI, Novita, Ollama, OpenAI, Azure OpenAI, HuggingFace and xAI out of the box (or bring your own!)
--  Support for Agent Client Protocol <https://agentclientprotocol.com/overview/introduction>, enabling coding with agents like Augment Code <https://docs.augmentcode.com/cli/overview>, Cagent <https://github.com/docker/cagent> from Docker, Claude Code <https://docs.anthropic.com/en/docs/claude-code/overview>, Codex <https://openai.com/codex>, Copilot CLI <https://github.com/features/copilot/cli>, Gemini CLI <https://github.com/google-gemini/gemini-cli>, Goose <https://block.github.io/goose/>, Cursor CLI <https://cursor.com/docs/cli/overview>, Kimi CLI <https://github.com/MoonshotAI/kimi-cli>, Kiro <https://kiro.dev/cli/>, Mistral Vibe <https://github.com/mistralai/mistral-vibe> and OpenCode <https://opencode.ai>
+-  Support for Agent Client Protocol <https://agentclientprotocol.com/overview/introduction>, enabling coding with agents like Augment Code <https://docs.augmentcode.com/cli/overview>, Cagent <https://github.com/docker/cagent> from Docker, Claude Code <https://docs.anthropic.com/en/docs/claude-code/overview>, Cline CLI <https://docs.cline.bot/home>, Codex <https://openai.com/codex>, Copilot CLI <https://github.com/features/copilot/cli>, Gemini CLI <https://github.com/google-gemini/gemini-cli>, Goose <https://block.github.io/goose/>, Cursor CLI <https://cursor.com/docs/cli/overview>, Kimi CLI <https://github.com/MoonshotAI/kimi-cli>, Kiro <https://kiro.dev/cli/>, Mistral Vibe <https://github.com/mistralai/mistral-vibe> and OpenCode <https://opencode.ai>
 -  User contributed and supported |codecompanion-configuration-adapters-http-community-adapters|
 -  Support for |codecompanion-model-context-protocol|
 -  |codecompanion-usage-inline.html|, code creation and refactoring
@@ -114,6 +114,7 @@ agents. Out of the box, the plugin supports:
 - Augment Code (`auggie_cli`) - Requires an API key
 - Cagent (`cagent`)
 - Claude Code (`claude_code`) - Requires an API key or a Claude Pro subscription
+- Cline CLI (`cline_cli`)
 - Codex (`codex`) - Requires an API key
 - Copilot (`copilot`) - Requires a token which is created via `:Copilot setup` in Copilot.vim <https://github.com/github/copilot.vim>
 - Gemini CLI (`gemini_cli`) - Requires an API key or a Gemini Pro subscription
@@ -492,7 +493,7 @@ use a rich prompt input field complete with |codecompanion--editor-context|.
 Save with `:w` to send the prompt to the agent, or `:w!` to send and
 auto-submit it.
 
-Adding `!` to the command (e.g.� `:CodeCompanionCLI! <prompt>`) will
+Adding `!` to the command (e.g. `:CodeCompanionCLI! <prompt>`) will
 auto-submit the prompt and keep your cursor in the current buffer. You can also
 specify which agent to use with `:CodeCompanionCLI agent=<agent name>`.
 
@@ -1264,6 +1265,16 @@ AN API KEY
 <
 
 
+SETUP: CLINE CLI ~
+
+To use Cline CLI <https://cline.bot/cli> within CodeCompanion, you’ll need to
+take the following steps:
+
+1. Install <https://docs.cline.bot/getting-started/installing-cline#cli> Cline CLI.
+2. Authenticate by running `cline auth`.
+3. Select the `cline_cli` adapter in your chat buffer
+
+
 SETUP: CODEX ~
 
 To use OpenAI’s Codex <https://openai.com/codex/>, install an ACP-compatible
@@ -1416,9 +1427,10 @@ The configuration for both types of adapters is exactly the same, however they
 sit within their own tables (`adapters.http.*` and `adapters.acp.*`) and have
 different options available. HTTP adapters use `models` to allow users to
 select the specific LLM they’d like to interact with. ACP adapters use
-`commands` to allow users to customize their interaction with agents (e.g.�
-enabling `yolo` mode). As there is a lot of shared functionality between the
-two adapters, it is recommend that you read this page alongside the ACP one.
+`commands` to allow users to customize their interaction with agents
+(e.g. enabling `yolo` mode). As there is a lot of shared functionality between
+the two adapters, it is recommend that you read this page alongside the ACP
+one.
 
 
 CHANGING THE DEFAULT ADAPTER ~
@@ -1472,7 +1484,7 @@ the adapter’s URL, headers, parameters and other fields at runtime.
   <https://github.com/olimorris/codecompanion.nvim/discussions/601>
 Supported `env` value types: - **Plain environment variable name (string)**: if
 the value is the name of an environment variable that has already been set
-(e.g.� `"HOME"` or `"GEMINI_API_KEY"`), the plugin will read the value. -
+(e.g. `"HOME"` or `"GEMINI_API_KEY"`), the plugin will read the value. -
 **Command (string prefixed with cmd:)**: any value that starts with `cmd:` will
 be executed via the shell. Example: `"cmd:op read
 op://personal/Gemini/credential --no-newline"`. - **Function**: you can provide
@@ -1833,9 +1845,9 @@ the first argument.
 
 AVAILABLE EVENTS
 
-  ----------------------------------------------------------------------------------
+  ---------------------------------------------------------------------------------------------------------------
   Event                   Description                  Extra Args
-  ----------------------- ---------------------------- -----------------------------
+  ----------------------- ---------------------------- ----------------------------------------------------------
   on_created              Chat buffer has been created -
 
   on_before_submit        Before the message is sent   { adapter }
@@ -1844,6 +1856,10 @@ AVAILABLE EVENTS
 
   on_submitted            After the message has been   { payload }
                           sent to the LLM              
+
+  on_checkpoint           Fires at safe points during  { adapter, estimated_tokens, messages, reported_tokens }
+                          the chat lifecycle. Messages 
+                          are mutable                  
 
   on_tool_output          Before tool output is added  { tool, for_llm, for_user }
                           to the chat. Mutate          
@@ -1860,7 +1876,7 @@ AVAILABLE EVENTS
                           stopped/cancelled            
 
   on_closed               Chat buffer has been closed  -
-  ----------------------------------------------------------------------------------
+  ---------------------------------------------------------------------------------------------------------------
 
 REGISTERING CALLBACKS
 
@@ -1964,6 +1980,51 @@ sent to the LLM) and `for_user` (what’s shown in the buffer). Mutate
               string.format("Tool output from '%s' truncated (~%d tokens)", data.tool, max_tokens),
               vim.log.levels.WARN
             )
+          end
+        end)
+      end,
+    })
+<
+
+
+CHECKPOINTS
+
+The `on_checkpoint` callback fires at various safe points during the chat
+lifecycle, giving you the ability to inspect and mutate the message stack
+before the chat continues. It fires:
+
+- **Before submit** — Before a request is sent to an LLM
+- **After tool output** — Once tools in the current batch have finished, ensuring no orphaned tool calls
+- **After a response with no tools** — When the LLM responds, minus any tool calls
+
+The `data` table contains:
+
+- `adapter` — a safe copy of the current adapter (includes `meta.context_window` for HTTP adapters)
+- `estimated_tokens` — client-side token estimate across all messages
+- `messages` — a **mutable reference** to the chat’s message stack. Changes made here persist back to the chat
+- `reported_tokens` — server-reported token count (if available from the adapter)
+
+This is useful for monitoring context window usage and compacting the message
+stack:
+
+>lua
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "CodeCompanionChatCreated",
+      callback = function(args)
+        local chat = require("codecompanion").buf_get_chat(args.data.bufnr)
+        chat:add_callback("on_checkpoint", function(c, data)
+          local context_window = data.adapter.meta and data.adapter.meta.context_window
+          if not context_window then
+            return
+          end
+    
+          local usage = data.estimated_tokens / context_window
+          if usage > 0.8 then
+            vim.notify(
+              string.format("Context window %.0f%% full", usage * 100),
+              vim.log.levels.WARN
+            )
+            -- Compact data.messages in-place here
           end
         end)
       end,
@@ -3721,7 +3782,7 @@ The fastest way to copy an LLM’s code output is with `gy`. This will yank the
 nearest codeblock.
 
 
-APPLYING AN LLM�S EDITS TO A BUFFER OR FILE ~
+APPLYING AN LLM’S EDITS TO A BUFFER OR FILE ~
 
 The |codecompanion-usage-chat-buffer-agents-tools-files| tool, combined with
 the |codecompanion-usage-chat-buffer-editor-context.html-buffer| editor context
@@ -4601,7 +4662,7 @@ message to the LLM.
 
   [!IMPORTANT] With the exception of `#{buffer}` and `#{buffers}`, editor context
   captures a point-in-time snapshot when your message is sent. If the underlying
-  data changes (e.g.� new diagnostics, a different quickfix list), simply use the
+  data changes (e.g. new diagnostics, a different quickfix list), simply use the
   context again in a new message to share the latest state.
 
 #BUFFER ~
@@ -5366,7 +5427,9 @@ LIST OF EVENTS ~
 
 The events that are fired from within the plugin are:
 
+- `CodeCompanionACPConnected` - Fired after the ACP connection is authenticated and ready to use
 - `CodeCompanionACPSessionPre` - Fired after ACP authentication completes but before a new session is established; allows subscribers to modify the connection (e.g. inject MCP servers) synchronously
+- `CodeCompanionACPSessionPost` - Fired after a new ACP session has been established
 - `CodeCompanionChatACPModeChanged` - Fired after the ACP mode has been changed in the chat
 - `CodeCompanionACPChatRestored` - Fired after an ACP session has been restored
 - `CodeCompanionChatCreated` - Fired after a chat has been created for the first time
@@ -5402,6 +5465,12 @@ The events that are fired from within the plugin are:
 - `CodeCompanionRequestStarted` - Fired at the start of any API request
 - `CodeCompanionRequestStreaming` - Fired at the start of a streaming API request
 - `CodeCompanionRequestFinished` - Fired at the end of any API request
+
+In addition to these events, the chat buffer has its own **callback system**
+for hooking into lifecycle events like `on_before_submit`, `on_checkpoint` and
+`on_tool_output`. These callbacks receive the chat instance and can inspect or
+mutate chat state. See the |codecompanion-configuration-chat-buffer-callbacks|
+section for details.
 
 There are also events that can be utilized to trigger commands from within the
 plugin:
@@ -5859,7 +5928,7 @@ These handlers manage tool/function calling:
   as a great reference to understand how they’re working with the output of the
   API
 
-OPENAI�S API OUTPUT
+OPENAI’S API OUTPUT
 
 If we reference the OpenAI documentation
 <https://platform.openai.com/docs/guides/text-generation/chat-completions-api>
@@ -7767,7 +7836,7 @@ tool to function. In the case of Anthropic, we insert additional headers.
 <
 
 Some adapter tools can be a `hybrid` in terms of their implementation. That is,
-they’re an adapter tool that requires a client-side component (i.e.� a
+they’re an adapter tool that requires a client-side component (i.e. a
 built-in tool). This is the case for the
 |codecompanion-usage-chat-buffer-agents-tools-memory| tool from Anthropic. To
 allow for this, ensure that the tool definition in `available_tools` has

@@ -10,7 +10,9 @@ In order to enable a tighter integration between CodeCompanion and your Neovim c
 
 The events that are fired from within the plugin are:
 
+- `CodeCompanionACPConnected` - Fired after the ACP connection is authenticated and ready to use
 - `CodeCompanionACPSessionPre` - Fired after ACP authentication completes but before a new session is established; allows subscribers to modify the connection (e.g. inject MCP servers) synchronously
+- `CodeCompanionACPSessionPost` - Fired after a new ACP session has been established
 - `CodeCompanionChatACPModeChanged` - Fired after the ACP mode has been changed in the chat
 - `CodeCompanionACPChatRestored` - Fired after an ACP session has been restored
 - `CodeCompanionChatCreated` - Fired after a chat has been created for the first time
@@ -46,6 +48,8 @@ The events that are fired from within the plugin are:
 - `CodeCompanionRequestStarted` - Fired at the start of any API request
 - `CodeCompanionRequestStreaming` - Fired at the start of a streaming API request
 - `CodeCompanionRequestFinished` - Fired at the end of any API request
+
+In addition to these events, the chat buffer has its own **callback system** for hooking into lifecycle events like `on_before_submit`, `on_checkpoint` and `on_tool_output`. These callbacks receive the chat instance and can inspect or mutate chat state. See the [callbacks](/configuration/chat-buffer#callbacks) section for details.
 
 There are also events that can be utilized to trigger commands from within the plugin:
 

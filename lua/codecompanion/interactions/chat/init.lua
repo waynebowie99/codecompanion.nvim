@@ -9,7 +9,7 @@
 ---@field buffer_context table The context of the buffer that the chat was initiated from
 ---@field buffer_diffs CodeCompanion.BufferDiffs Watch for any changes in buffers
 ---@field bufnr number The buffer number of the chat
----@field builder CodeCompanion.Chat.UI.Builder The builder for the chat UI
+---@field builder CodeCompanion.Chat.UI.Builder The UI builder for the chat buffer
 ---@field callbacks table<string, (fun(chat: CodeCompanion.Chat, ...: any): any)[]> A table of callback functions that are executed at various points (on_created, on_before_submit, on_submitted, on_tool_output, on_ready, on_completed, on_cancelled, on_closed)
 ---@field chat_parser vim.treesitter.LanguageTree The Markdown Tree-sitter parser for the chat buffer
 ---@field context CodeCompanion.Chat.Context
@@ -45,11 +45,11 @@
 ---@field adapter? CodeCompanion.HTTPAdapter|CodeCompanion.ACPAdapter The adapter used in this chat buffer
 ---@field auto_submit? boolean Automatically submit the chat when the chat buffer is created
 ---@field buffer_context? table Context of the buffer that the chat was initiated from
----@field callbacks table<string, (fun(chat: CodeCompanion.Chat, ...: any): any)[]> A table of callback functions that are executed at various points (on_created, on_before_submit, on_submitted, on_tool_output, on_ready, on_completed, on_cancelled, on_closed)
+---@field callbacks? table<string, (fun(chat: CodeCompanion.Chat, ...: any): any)[]> A table of callback functions that are executed at various points (on_created, on_before_submit, on_submitted, on_tool_output, on_ready, on_completed, on_cancelled, on_closed)
 ---@field from_prompt_library? boolean Whether the chat was initiated from the prompt library
 ---@field hidden? boolean Whether the chat should be hidden (no window opened)
 ---@field ignore_system_prompt? boolean Do not send the default system prompt with the request
----@field last_role string The last role that was rendered in the chat buffer-
+---@field last_role? string The last role that was rendered in the chat buffer
 ---@field mcp_servers? table<string> List of MCP server names to start and load into the chat buffer
 ---@field messages? CodeCompanion.Chat.Messages The messages to display in the chat buffer
 ---@field settings? table The settings that are used in the adapter of the chat buffer
@@ -88,48 +88,25 @@ local CONSTANTS = {
 
   SYSTEM_PROMPT = [[You are an AI programming assistant named "CodeCompanion", working within the Neovim text editor.
 
-You are a general programming assistant and expert in software engineering. You can answer questions about any programming language, framework, or concept.
-You can also perform the following tasks:
-* Answer general programming questions.
-* Explain how the code in a Neovim buffer works.
-* Review the selected code from a Neovim buffer.
-* Generate unit tests for the selected code.
-* Propose fixes for problems in the selected code.
-* Scaffold code for a new workspace.
-* Find relevant code to the user's query.
-* Propose fixes for test failures.
-* Answer questions about Neovim.
-* Prefer vim.api* methods where possible.
-
 Follow the user's requirements carefully and to the letter.
 Use the context and attachments the user provides.
 Keep your answers short and impersonal.
-Use Markdown formatting in your answers.
-DO NOT use H1 or H2 headers in your response.
-When suggesting code changes or new content, use Markdown code blocks.
-To start a code block, use 4 backticks.
-After the backticks, add the programming language name as the language ID and the file path within curly braces if available.
-To close a code block, use 4 backticks on a new line.
-If you want the user to decide where to place the code, do not add the file path.
-In the code block, use a line comment with '...existing code...' to indicate code that is already present in the file. Ensure this comment is specific to the programming language.
-Code block example:
+Use Markdown formatting in your answers. DO NOT use H1 or H2 headers.
+
+When suggesting code changes, use Markdown code blocks with four backticks. Add the language ID and file path (in curly braces) after the opening backticks. Omit the file path if you want the user to decide where to place the code. Use a line comment with '...existing code...' to indicate unchanged code, using the correct comment syntax for the language.
+Example:
 ````languageId {path/to/file}
 // ...existing code...
 { changed code }
 // ...existing code...
-{ changed code }
-// ...existing code...
 ````
-Ensure line comments use the correct syntax for the programming language (e.g. "#" for Python, "--" for Lua).
-For code blocks use four backticks to start and end.
-Avoid wrapping the whole response in triple backticks.
-Do not include diff formatting unless explicitly asked.
-Do not include line numbers unless explicitly asked.
+DO NOT include diff formatting or line numbers unless asked.
+DO NOT wrap the whole response in triple backticks.
 
 When given a task:
-1. Think step-by-step and, unless the user requests otherwise or the task is very simple. For complex architectural changes, describe your plan in pseudocode first.
-2. When outputting code blocks, ensure only relevant code is included, avoiding any repeating or unrelated code.
-3. End your response with a short suggestion for the next user turn that directly supports continuing the conversation.
+1. Think step-by-step. For complex architectural changes, describe your plan first.
+2. Only include relevant code in code blocks — avoid repeating unchanged code.
+3. End with a short suggestion for the next user turn.
 
 ]],
 }
@@ -722,7 +699,8 @@ end
 
 ---Change the adapter in the chat buffer
 ---@param adapter string
-function Chat:change_adapter(adapter)
+---@param cb? function
+function Chat:change_adapter(adapter, cb)
   local function fire()
     return utils.fire("ChatAdapter", { bufnr = self.bufnr, adapter = adapters.make_safe(self.adapter) })
   end
@@ -731,8 +709,12 @@ function Chat:change_adapter(adapter)
   self.ui.adapter = self.adapter
 
   if self.adapter.type == "acp" then
-    helpers.create_acp_connection(self)
+    helpers.create_acp_connection(self, cb)
     helpers.remove_mcp_tools(self)
+  else
+    if cb then
+      vim.schedule(cb)
+    end
   end
 
   self:set_system_prompt()
@@ -997,6 +979,38 @@ function Chat:add_message(data, opts)
   return self
 end
 
+---Check if any tool calls in messages are missing their results
+---@return boolean
+function Chat:has_orphaned_tool_calls()
+  local pending = {}
+
+  for _, msg in ipairs(self.messages) do
+    if msg.tools and msg.tools.calls then
+      for _, call in ipairs(msg.tools.calls) do
+        if call.id then
+          pending[call.id] = true
+        end
+      end
+    end
+    if msg.tools and msg.tools.call_id then
+      pending[msg.tools.call_id] = nil
+    end
+  end
+
+  return next(pending) ~= nil
+end
+
+---Run checkpoint callbacks, passing mutable chat state
+---@return nil
+function Chat:checkpoint()
+  self:dispatch("on_checkpoint", {
+    adapter = adapters.make_safe(self.adapter),
+    estimated_tokens = tokens.get_tokens(self.messages),
+    messages = self.messages,
+    reported_tokens = self.ui.tokens,
+  })
+end
+
 ---Add an image to the chat buffer
 ---@param image CodeCompanion.Image The image object containing the path and other metadata
 ---@param opts? {role?: "user"|string, source?: string, bufnr?: number} Options for adding the image
@@ -1142,6 +1156,11 @@ function Chat:submit(opts)
     return log:debug("Chat request already in progress")
   end
 
+  -- The chat buffer can be submitted in insert mode, but we want to ensure that
+  -- we revert to normal mode so the user can scroll the chat buffer without
+  -- unintentionally hitting the "modifiable is off" error
+  vim.cmd("stopinsert")
+
   opts = opts or {}
 
   if opts.callback then
@@ -1170,7 +1189,18 @@ function Chat:submit(opts)
 
     self.buffer_diffs:check_for_changes(self)
 
-    -- Allow users to send a blank message to the LLM
+    -- NOTE: There are instances when submit is called with no user message.
+    -- Such as when tools auto-submitting responses. So, we need to ensure
+    -- that we only manage context if the last message was from the user.
+    if message_to_submit then
+      message_to_submit = self.context:remove(message_to_submit)
+      self:replace_user_inputs(message_to_submit)
+      self:check_images(message_to_submit)
+      self:check_context()
+      sync_all_buffer_content(self)
+    end
+
+    -- Add the user message after any context so the LLM sees context first
     if not opts.regenerate then
       local chat_opts = config.interactions.chat.opts
       if message_to_submit and message_to_submit.content and chat_opts and chat_opts.prompt_decorator then
@@ -1181,17 +1211,6 @@ function Chat:submit(opts)
         role = config.constants.USER_ROLE,
         content = (message_to_submit and message_to_submit.content or config.interactions.chat.opts.blank_prompt),
       })
-    end
-
-    -- NOTE: There are instances when submit is called with no user message.
-    -- Such as when tools auto-submitting responses. So, we need to ensure
-    -- that we only manage context if the last message was from the user.
-    if message_to_submit then
-      message_to_submit = self.context:remove(self.messages[#self.messages])
-      self:replace_user_inputs(message_to_submit)
-      self:check_images(message_to_submit)
-      self:check_context()
-      sync_all_buffer_content(self)
     end
 
     -- Check if the user has manually overridden the adapter
@@ -1205,6 +1224,8 @@ function Chat:submit(opts)
     self.ui:lock_buf()
     self.header_line = api.nvim_buf_line_count(self.bufnr) + 2 -- this accounts for the LLM header
   end
+
+  self:checkpoint()
 
   -- Shallow-copy each message so map_roles can mutate role without affecting self.messages
   local shallow_messages = {}
@@ -1297,8 +1318,9 @@ function Chat:done(output, reasoning, tools, meta, opts)
       content = content,
       reasoning = reasoning_content,
     }
+    local token_meta = { cumulative_tokens = self.ui.tokens }
     self:add_message(message, {
-      _meta = has_meta and meta or nil,
+      _meta = vim.tbl_extend("force", has_meta and meta or {}, token_meta),
     })
     reasoning_content = nil
   end
@@ -1313,19 +1335,21 @@ function Chat:done(output, reasoning, tools, meta, opts)
   if has_tools then
     tools = adapters.call_handler(self.adapter, "format_calls", tools)
     if tools then
+      local token_meta = { cumulative_tokens = self.ui.tokens }
       local message = {
         role = config.constants.LLM_ROLE,
         reasoning = reasoning_content,
         tool_calls = tools,
-        _meta = has_meta and meta or nil,
       }
       self:add_message(message, {
         visible = false,
+        _meta = vim.tbl_extend("force", has_meta and meta or {}, token_meta),
       })
       return self.tools:execute(self, tools)
     end
   end
 
+  self:checkpoint()
   self:ready_for_input()
 
   self:dispatch("on_completed", { status = self.status })
@@ -1636,16 +1660,18 @@ function Chat:add_tool_output(tool, for_llm, for_user)
   end
 
   -- Allow tools to pass in an empty string to not write any output to the buffer
-  if for_user == "" then
-    return
+  if for_user ~= "" then
+    self:add_buf_message({
+      role = config.constants.LLM_ROLE,
+      content = (for_user or for_llm),
+    }, {
+      type = self.MESSAGE_TYPES.TOOL_MESSAGE,
+    })
   end
 
-  self:add_buf_message({
-    role = config.constants.LLM_ROLE,
-    content = (for_user or for_llm),
-  }, {
-    type = self.MESSAGE_TYPES.TOOL_MESSAGE,
-  })
+  if not self:has_orphaned_tool_calls() then
+    self:checkpoint()
+  end
 end
 
 ---Ready the chat buffer for the next round of conversation
@@ -1765,6 +1791,15 @@ function Chat:update_metadata()
     tokens = self.ui.tokens or 0,
     tools = vim.tbl_count(self.tool_registry.in_use) or 0,
   }
+
+  if self.adapter.type == "acp" then
+    if model and model ~= "default" then
+      utils.fire("ChatModel", { bufnr = self.bufnr, id = self.id, model = model })
+    end
+    if mode_info then
+      utils.fire("ChatACPModeChanged", { bufnr = self.bufnr, id = self.id, mode = mode_info })
+    end
+  end
 end
 
 ---Set the title of the chat buffer
@@ -1865,7 +1900,7 @@ function Chat.toggle(args)
       chat_opts.adapter = adapter
     end
     -- Add rules to the chat buffer
-    local rules_cb = require("codecompanion.interactions.chat.rules.helpers").add_callbacks(chat_opts)
+    local rules_cb = require("codecompanion.interactions.shared.rules.helpers").add_callbacks(chat_opts)
     if rules_cb then
       chat_opts.callbacks = rules_cb
     end

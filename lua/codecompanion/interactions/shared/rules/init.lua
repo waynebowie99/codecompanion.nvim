@@ -1,7 +1,7 @@
 local file = require("codecompanion.utils.files")
-local helpers = require("codecompanion.interactions.chat.rules.helpers")
+local helpers = require("codecompanion.interactions.shared.rules.helpers")
 local log = require("codecompanion.utils.log")
-local parsers = require("codecompanion.interactions.chat.rules.parsers")
+local parsers = require("codecompanion.interactions.shared.rules.parsers")
 
 ---@class CodeCompanion.Chat.Rules.ProcessedFile
 ---@field name string The name of the rules file
@@ -9,7 +9,7 @@ local parsers = require("codecompanion.interactions.chat.rules.parsers")
 ---@field filename string The filename of the rules file
 ---@field meta? {included_files: string[]} Additional metadata about the rules file
 ---@field parser string|nil The parser to use for the rules file
----@field path string The full, normalized file path of the rules file
+---@field path string The file path relative to the current working directory
 ---@field system_prompt? string The extracted system prompt from the rules file
 
 ---@class CodeCompanion.Chat.Rules
@@ -44,9 +44,9 @@ function Rules.new(args)
   return self
 end
 
----Collect all file paths based on the rules configuration
+---Resolve all file paths based on the rules configuration
 ---@return string[] paths List of absolute file paths
-function Rules:collect_files()
+function Rules:resolve_paths()
   local collected_paths = {}
   local seen = {} -- Track duplicates
 
@@ -175,7 +175,7 @@ function Rules:read_files(paths)
         table.insert(files, {
           name = original_path or path,
           content = content,
-          path = path,
+          path = vim.fn.fnamemodify(path, ":p:."),
           filename = vim.fn.fnamemodify(path, ":t"),
           parser = file_parser,
         })
@@ -226,7 +226,7 @@ end
 ---@param args { chat: CodeCompanion.Chat }
 ---@return nil
 function Rules:make(args)
-  local paths = self:collect_files()
+  local paths = self:resolve_paths()
   local files = self:read_files(paths)
   self.processed = self:parse_files(files)
   self:add_to_chat(args.chat)
